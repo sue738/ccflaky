@@ -1,0 +1,39 @@
+{
+  "name": "cctoolstat",
+  "version": "0.1.0",
+  "description": "Which tools Claude actually uses — and which ones silently fail on you.",
+  "bin": {
+    "cctoolstat": "bin/cctoolstat.js"
+  },
+  "scripts": {
+    "test": "node test/test.js",
+    "sync-vendor": "node ../tools/sync-vendor.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "tools",
+    "analytics",
+    "debugging",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "sue738",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sue738/cctoolstat.git"
+  },
+  "homepage": "https://github.com/sue738/cctoolstat#readme",
+  "bugs": {
+    "url": "https://github.com/sue738/cctoolstat/issues"
+  }
+}
