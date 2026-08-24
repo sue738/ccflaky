@@ -57,8 +57,8 @@ re-diagnose the same failure twice.
 Not yet published to npm — build from this checkout:
 
 ```sh
-git clone https://github.com/sue738/playground.git
-cd playground/apps/cctoolstat
+git clone https://github.com/sue738/cctoolstat.git
+cd cctoolstat
 npm link   # or: npm install -g .
 ```
 
@@ -71,6 +71,15 @@ Output is English by default; set `CCTOOLSTAT_LANG=ja` (or `LANG=ja_JP.UTF-8`) f
 - Subagent (sidechain) tool calls are excluded; this is your main loop.
 - Reads local transcript files under `~/.claude/projects` and nowhere else.
   Read-only, zero dependencies.
+
+## Security & trust
+
+A tool that inspects your sessions deserves maximum suspicion, so:
+
+- **Zero dependencies, no postinstall, no build step** — read it first, it's short
+- **Fully local** — nothing leaves your machine, no telemetry, no network calls
+- **Read-only** — it never modifies a transcript
+- Paranoid path: `git clone https://github.com/sue738/cctoolstat.git && node cctoolstat/bin/cctoolstat.js`
 
 ## License
 MIT
