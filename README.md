@@ -1,14 +1,14 @@
-# cctoolstats 🔧
+# ccflaky 🔧
 
 **Which tools Claude actually uses — and which ones silently fail on you.**
 
 A failing tool is invisible in normal use: Claude retries, works around it, and
-you never learn that your test command errors 40% of the time. cctoolstats pairs
+you never learn that your test command errors 40% of the time. ccflaky pairs
 every `tool_use` with its result and counts what happened.
 
 ```
-$ cctoolstats
-=== cctoolstats — 352 calls, 5.7% error ===
+$ ccflaky
+=== ccflaky — 352 calls, 5.7% error ===
 
   Bash                 126 ████████████████████████  ⚠️ 16 err (12.7%)
   Write                 95 ██████████████████······  ⚠️ 1 err (1.1%)
@@ -20,18 +20,18 @@ That last line is the point: a tool failing half the time, discovered only becau
 something counted it.
 
 ```bash
-cctoolstats                    # all time
-cctoolstats --days 7           # recent
-cctoolstats --daily            # per-day breakdown (add --json for machine-readable)
-cctoolstats --project NAME     # only projects whose path matches NAME
-cctoolstats --failures         # show the actual error text
-cctoolstats --json
-cctoolstats --base-dir DIR     # scan a different transcript root
+ccflaky                    # all time
+ccflaky --days 7           # recent
+ccflaky --daily            # per-day breakdown (add --json for machine-readable)
+ccflaky --project NAME     # only projects whose path matches NAME
+ccflaky --failures         # show the actual error text
+ccflaky --json
+ccflaky --base-dir DIR     # scan a different transcript root
 
-cctoolstats --suggest                       # tools crossing a failure threshold,
+ccflaky --suggest                       # tools crossing a failure threshold,
                                             # errors clustered by type
-cctoolstats --suggest --min-calls 5 --min-rate 20   # threshold (these are the defaults)
-cctoolstats --suggest --memory-dir DIR      # flag whether each tool's name already
+ccflaky --suggest --min-calls 5 --min-rate 20   # threshold (these are the defaults)
+ccflaky --suggest --memory-dir DIR      # flag whether each tool's name already
                                             # appears in DIR/*.md (optional)
 ```
 
@@ -57,12 +57,12 @@ re-diagnose the same failure twice.
 Not yet published to npm — build from this checkout:
 
 ```sh
-git clone https://github.com/sue738/cctoolstats.git
-cd cctoolstats
+git clone https://github.com/sue738/ccflaky.git
+cd ccflaky
 npm link   # or: npm install -g .
 ```
 
-Output is English by default; set `CCTOOLSTATS_LANG=ja` (or `LANG=ja_JP.UTF-8`) for Japanese.
+Output is English by default; set `CCFLAKY_LANG=ja` (or `LANG=ja_JP.UTF-8`) for Japanese.
 
 ## Notes
 
@@ -79,7 +79,7 @@ A tool that inspects your sessions deserves maximum suspicion, so:
 - **Zero dependencies, no postinstall, no build step** — read it first, it's short
 - **Fully local** — nothing leaves your machine, no telemetry, no network calls
 - **Read-only** — it never modifies a transcript
-- Paranoid path: `git clone https://github.com/sue738/cctoolstats.git && node cctoolstats/bin/cctoolstats.js`
+- Paranoid path: `git clone https://github.com/sue738/ccflaky.git && node ccflaky/bin/ccflaky.js`
 
 ## License
 MIT
