@@ -8,7 +8,9 @@ every `tool_use` with its result and counts what happened.
 
 Not a usage dashboard. `ccusage` already answers "what did I spend"; this
 answers "what quietly didn't work" — which tool, how often, and with what
-error text.
+error text. Counting tool calls is not the point: each call is matched to its
+result by `tool_use_id`, so a failure is attributed to the exact call that
+produced it even when calls run in parallel.
 
 ```
 $ ccflaky
