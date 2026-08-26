@@ -314,5 +314,22 @@ const T = {
 }
 
 
+console.log('== scaffold: 条件は生成せず、埋める場所を1つに絞る ==');
+const SC = require('../lib/scaffold.js');
+ok('"X must be an integer" から X を拾う',
+  SC.hintFields('tabId must be an integer').includes('tabId'));
+ok('"Unrecognized key: \"x\"" から x を拾う',
+  SC.hintFields('Unrecognized key: "pages.0.foo"').includes('pages.0.foo'));
+ok('手がかりが無くても落ちない', Array.isArray(SC.hintFields('boom')));
+{
+  const out = SC.scaffold('T', { calls: 10, errors: 2, errorRate: 20, sample: 'tabId must be an integer', share: 1 });
+  ok('対象ツール名で早期 return する', out.includes('!= "T"'));
+  ok('実測値が本文に入る', out.includes('10呼出中2失敗(20%)'));
+  ok('条件は書かず bad = False のまま渡す', out.includes('bad = False'));
+  ok('拾ったフィールド名を手がかりとして出す', out.includes('tabId'));
+  ok('投入後に測る手順を書き込む', out.includes('--watch T') && out.includes('--verify'));
+  ok('deny を返す形になっている', out.includes('"permissionDecision": "deny"'));
+}
+
 console.log(`\n結果: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

@@ -15,6 +15,7 @@ const T = require('../lib/vendor/transcript.js');
 const S = require('../lib/flaky.js');
 const G = require('../lib/suggest.js');
 const R = require('../lib/relapse.js');
+const SC = require('../lib/scaffold.js');
 const EV = require('../lib/events.js');
 const path = require('path');
 const os = require('os');
@@ -46,6 +47,11 @@ Usage: ccflaky [options]
   --min-rate N         --suggest threshold: minimum error rate % (default 20)
   --guardable          with --suggest: mark which failures a pre-call guard
                        could actually catch (single cause + input-side)
+  --scaffold TOOL      print a PreToolUse hook skeleton for TOOL, with the
+                       measured numbers filled in and the condition left as a
+                       TODO -- guessing the condition from an error string
+                       would block correct calls, which costs more than the
+                       failure did
   --watch TOOL         record that you just guarded TOOL; now becomes the
                        cutoff between "before" and "after"
   --verify             for everything watched: failure rate before vs after.
@@ -77,6 +83,7 @@ function parseArgs(argv) {
     else if (a === '--guardable') o.guardable = true;
     else if (a === '--watch') { if (!looksLikeFlag(argv[i + 1])) o.watch = argv[++i]; }
     else if (a === '--verify') o.verify = true;
+    else if (a === '--scaffold') { if (!looksLikeFlag(argv[i + 1])) o.scaffold = argv[++i]; }
     else if (a === '--min-after') { if (!looksLikeFlag(argv[i + 1])) o.minAfter = +argv[++i]; }
     else if (a === '--min-calls') { if (!looksLikeFlag(argv[i + 1])) o.minCalls = +argv[++i]; }
     else if (a === '--min-rate') { if (!looksLikeFlag(argv[i + 1])) o.minRate = +argv[++i]; }
@@ -131,6 +138,29 @@ async function main() {
     console.log(L(`watching ${o.watch} from ${at}`, `${o.watch} を ${at} から監視します`));
     console.log(L('  Calls before that moment are the baseline; calls after are the test.',
                   '  この時刻より前が基準、後が検証対象です。'));
+    return;
+  }
+
+  if (o.scaffold) {
+    const events = await collectEvents(o);
+    const { rows, errors } = (() => {
+      const st = new Map(); const errs = [];
+      for (const e of events) {
+        if (!st.has(e.tool)) st.set(e.tool, { calls: 0, errors: 0 });
+        const x = st.get(e.tool); x.calls++;
+        if (!e.ok) { x.errors++; errs.push({ tool: e.tool, text: e.text }); }
+      }
+      return { rows: [...st.entries()].map(([name, x]) => ({ name, calls: x.calls, errors: x.errors,
+        errorRate: x.calls ? +((x.errors / x.calls) * 100).toFixed(1) : 0 })), errors: errs };
+    })();
+    const row = rows.find((r) => r.name === o.scaffold);
+    if (!row) { console.error(L(`no calls recorded for ${o.scaffold}`, `${o.scaffold} の呼び出し記録がありません`)); process.exit(2); }
+    const clusters = G.cluster(errors.filter((e) => e.tool === o.scaffold));
+    const d = R.dominance(clusters);
+    console.log(SC.scaffold(o.scaffold, {
+      calls: row.calls, errors: row.errors, errorRate: row.errorRate,
+      sample: d.top && d.top.sample, share: d.share,
+    }));
     return;
   }
 
