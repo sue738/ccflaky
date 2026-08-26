@@ -21,7 +21,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
+      # OIDC trusted publishing needs npm >= 11.5.1. Node 22 still ships a
+      # 10.x npm, which signs the provenance statement and then authenticates
+      # as nobody -- the PUT comes back 404 rather than 403, so it reads like
+      # the package does not exist. Upgrade before publishing.
+      - run: npm install -g npm@latest
+      - run: npm --version
       - run: npm test
       - run: npm publish --provenance --access public
