@@ -1,9 +1,9 @@
 {
-  "name": "cctoolstat",
+  "name": "cctoolstats",
   "version": "0.1.0",
   "description": "Which tools Claude actually uses — and which ones silently fail on you.",
   "bin": {
-    "cctoolstat": "bin/cctoolstat.js"
+    "cctoolstats": "bin/cctoolstats.js"
   },
   "scripts": {
     "test": "node test/test.js",
@@ -31,10 +31,10 @@
   "author": "sue738",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sue738/cctoolstat.git"
+    "url": "git+https://github.com/sue738/cctoolstats.git"
   },
-  "homepage": "https://github.com/sue738/cctoolstat#readme",
+  "homepage": "https://github.com/sue738/cctoolstats#readme",
   "bugs": {
-    "url": "https://github.com/sue738/cctoolstat/issues"
+    "url": "https://github.com/sue738/cctoolstats/issues"
   }
 }

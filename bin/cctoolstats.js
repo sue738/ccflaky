@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * cctoolstat — which tools does Claude actually use, and which ones fail?
+ * cctoolstats — which tools does Claude actually use, and which ones fail?
  *
  * A failing tool is invisible in normal use: Claude retries, works around it,
  * and you never learn that (say) your test command errors 40% of the time.
  * This counts every tool call and pairs it with its result.
  *
- *   cctoolstat              # all time
- *   cctoolstat --days 7 --failures
+ *   cctoolstats              # all time
+ *   cctoolstats --days 7 --failures
  */
 'use strict';
 
@@ -18,7 +18,7 @@ const fs = require('fs');
 
 // English by default (this is a public npm package); same override pattern
 // as its sibling ccskillstats, so the two behave consistently.
-const JA = /^ja/i.test(process.env.CCTOOLSTAT_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '');
+const JA = /^ja/i.test(process.env.CCTOOLSTATS_LANG || process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '');
 const L = (en, ja) => (JA ? ja : en);
 
 // feed() gates every entry on T.isMainLoop() by default, so subagent turns
@@ -26,9 +26,9 @@ const L = (en, ja) => (JA ? ja : en);
 // compared with tools that made the other choice.
 const SCOPE = 'main';
 
-const HELP = `cctoolstat — tool usage and failure rates from your transcripts
+const HELP = `cctoolstats — tool usage and failure rates from your transcripts
 
-Usage: cctoolstat [options]
+Usage: cctoolstats [options]
   --days N       last N days only
   --daily        per-day breakdown (table by default, --json for machine-readable)
   --project S    only projects matching S
@@ -112,7 +112,7 @@ async function main() {
       // 呼び出しが前日にある日またぎエラーだけの日が消えて再び見えなくなる。
       .filter((d) => d.total > 0 || d.totalErr > 0);
     if (o.json) return console.log(JSON.stringify({ scope: SCOPE, daily }, null, 2));
-    console.log(`=== cctoolstat --daily ===`);
+    console.log(`=== cctoolstats --daily ===`);
     for (const d of daily) {
       // total=0だけどtotalErr>0の日は「呼び出しは前日、結果(エラー)は
       // この日」という日またぎケース — %表示だと0/0で消えるので件数で出す。
@@ -160,7 +160,7 @@ async function main() {
     });
     if (o.json) return console.log(JSON.stringify({ minCalls: o.minCalls || 5, minRate: o.minRate || 20, tools: withDocFlag }, null, 2));
     if (!withDocFlag.length) return console.log(L('(no tools crossed the threshold)', '(閾値を超えたツールなし)'));
-    console.log(`=== cctoolstat --suggest ${o.days ? `(last ${o.days}d)` : ''} ===`);
+    console.log(`=== cctoolstats --suggest ${o.days ? `(last ${o.days}d)` : ''} ===`);
     for (const f of withDocFlag) {
       const docNote = f.documented === null ? '' : f.documented ? L('  [already documented]', '  [記録済み]') : L('  [NOT documented]', '  [未記録]');
       console.log(`\n  ${f.name}  ${f.calls} calls, ${f.errors} errors (${f.errorRate}%)${docNote}`);
@@ -175,7 +175,7 @@ async function main() {
   if (!s.rows.length) return console.log(L('(no tool calls recorded)', '(ツール実行の記録なし)'));
 
   const max = s.rows[0].calls;
-  console.log(`=== cctoolstat ${o.days ? `(last ${o.days}d)` : ''} — ${s.total} calls, ${s.errorRate}% error ===`);
+  console.log(`=== cctoolstats ${o.days ? `(last ${o.days}d)` : ''} — ${s.total} calls, ${s.errorRate}% error ===`);
   console.log(`${L('scope', '集計範囲')}: ${T.scopeNote(s.scope, JA)}\n`);
   for (const r of s.rows) {
     const err = r.errors ? `  ⚠️ ${r.errors} err (${r.errorRate}%)` : '';
