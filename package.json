@@ -1,6 +1,6 @@
 {
   "name": "ccflaky",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Which tools Claude actually uses — and which ones silently fail on you.",
   "bin": {
     "ccflaky": "bin/ccflaky.js"

@@ -186,5 +186,133 @@ console.log('== --suggest CLI ==');
   fs.rmSync(memDir, { recursive: true, force: true });
 }
 
+// --- guard 候補の判定と再発測定(ccrelapse から統合) ---
+const R = require('../lib/relapse.js');
+const EV = require('../lib/events.js');
+console.log('== classify: 呼ぶ前に防げる型か ==');
+ok('tabId must be an integer は input(防げる)',
+  R.classify({ sample: 'tabId must be an integer' }).kind === 'input');
+ok('input は guardable',
+  R.classify({ sample: 'tabId must be an integer' }).guardable === true);
+ok('InputValidationError も input',
+  R.classify({ sample: '<tool_use_error>InputValidationError: called with input that could not be parsed' }).kind === 'input');
+ok('Figma のツール上限は quota(呼ぶ前に直せない)',
+  R.classify({ sample: "You've reached the Figma MCP tool call limit for your View seat. Upgrade your plan" }).kind === 'quota');
+ok('quota は guardable ではない',
+  R.classify({ sample: 'reached the tool call limit — upgrade your plan' }).guardable === false);
+ok('session expired は auth',
+  R.classify({ sample: 'MCP server "claude.ai Sentry" session expired' }).kind === 'auth');
+ok('セレクタ不一致は state',
+  R.classify({ sample: 'Error: ".sticky-note textarea" does not match any elements.' }).kind === 'state');
+ok('判定できないものは unknown で、guardable にしない',
+  R.classify({ sample: 'something went sideways' }).kind === 'unknown'
+  && R.classify({ sample: 'something went sideways' }).guardable === false);
+
+console.log('== 判定順: quota/auth を input と誤らない ==');
+// 「invalid」を含む quota 文面。順序を間違えると「呼ぶ前に防げる」と誤答する。
+ok('invalid を含んでいても quota が優先される',
+  R.classify({ sample: 'invalid request: you have reached the rate limit' }).kind === 'quota');
+ok('invalid を含んでいても auth が優先される',
+  R.classify({ sample: 'invalid token: session expired' }).kind === 'auth');
+
+console.log('== dominance: 原因が1つに寄っているか ==');
+const oneCause = [{ signature: 'a', count: 9 }, { signature: 'b', count: 1 }];
+const scattered = [{ signature: 'a', count: 6 }, { signature: 'b', count: 4 }, { signature: 'c', count: 4 }];
+ok('最頻クラスタと占有率', R.dominance(oneCause).share === 0.9);
+ok('失敗ゼロなら top は null', R.dominance([]).top === null);
+
+console.log('== guardCandidate ==');
+ok('単一原因 + input なら候補',
+  R.guardCandidate({ clusters: [{ signature: 's', count: 10, sample: 'tabId must be an integer' }] }).candidate === true);
+ok('原因が散っていれば候補でない(1つ塞いでも残る)',
+  R.guardCandidate({ clusters: [
+    { signature: 'a', count: 6, sample: 'tabId must be an integer' },
+    { signature: 'b', count: 4, sample: 'Unrecognized key: "x"' },
+    { signature: 'c', count: 4, sample: 'foo must be a string' },
+  ] }).candidate === false);
+ok('単一原因でも quota なら候補でない',
+  R.guardCandidate({ clusters: [{ signature: 's', count: 40, sample: 'reached the tool call limit' }] }).candidate === false);
+ok('候補でない時も理由を返す',
+  typeof R.guardCandidate({ clusters: [{ signature: 's', count: 40, sample: 'rate limit' }] }).reason === 'string');
+
+console.log('== ratesAround: 投入前後 ==');
+const CUT = 1000;
+const ev = [
+  { ts: 100, tool: 'X', ok: false, text: 'boom' },
+  { ts: 200, tool: 'X', ok: true },
+  { ts: 300, tool: 'X', ok: false, text: 'boom' },
+  { ts: 400, tool: 'Y', ok: false, text: 'boom' }, // 別ツールは混ぜない
+  { ts: 1100, tool: 'X', ok: true },
+  { ts: 1200, tool: 'X', ok: true },
+];
+const r = R.ratesAround(ev, { tool: 'X', cutoffMs: CUT });
+ok('前: 3呼出2失敗', r.before.calls === 3 && r.before.errors === 2);
+ok('後: 2呼出0失敗', r.after.calls === 2 && r.after.errors === 0);
+ok('他ツールを数えない', r.before.calls + r.after.calls === 5);
+
+const sigOf = (t) => String(t || '').slice(0, 4);
+const ev2 = [
+  { ts: 100, tool: 'X', ok: false, text: 'aaaa-1' },
+  { ts: 200, tool: 'X', ok: false, text: 'bbbb-2' },
+  { ts: 1100, tool: 'X', ok: false, text: 'bbbb-3' },
+];
+const r2 = R.ratesAround(ev2, { tool: 'X', cutoffMs: CUT, signature: 'aaaa', signatureOf: sigOf });
+ok('signature 指定で、その型の失敗だけを分子にする',
+  r2.before.errors === 1 && r2.after.errors === 0);
+ok('分母はツール全体のまま(型別の呼出数は割り当てられない)',
+  r2.before.calls === 2 && r2.after.calls === 1);
+
+console.log('== verdict: 薄い標本で「効いた」と言わない ==');
+ok('投入後が少なければ insufficient(0件でも成功と言わない)',
+  R.verdict({ before: { calls: 50, errors: 25, rate: 50 }, after: { calls: 3, errors: 0, rate: 0 } }).verdict === 'insufficient');
+ok('十分な標本で0%なら fixed',
+  R.verdict({ before: { calls: 50, errors: 25, rate: 50 }, after: { calls: 100, errors: 0, rate: 0 } }).verdict === 'fixed');
+ok('半減以上は improved',
+  R.verdict({ before: { calls: 50, errors: 25, rate: 50 }, after: { calls: 100, errors: 20, rate: 20 } }).verdict === 'improved');
+ok('下がっていなければ worse(診断が外れている可能性を明示)',
+  R.verdict({ before: { calls: 50, errors: 10, rate: 20 }, after: { calls: 100, errors: 30, rate: 30 } }).verdict === 'worse');
+ok('投入前が無ければ no-baseline',
+  R.verdict({ before: { calls: 0, errors: 0, rate: null }, after: { calls: 100, errors: 0, rate: 0 } }).verdict === 'no-baseline');
+
+console.log('== 実測の再現: ScheduleWakeup ==');
+// incident: 投入前6日 25/84 = 29.8%、投入後3日 1/176 = 0.6%
+const real = R.verdict({ before: { calls: 84, errors: 25, rate: 29.76 }, after: { calls: 176, errors: 1, rate: 0.57 } });
+ok('実測値で improved 以上と判定される', real.verdict === 'improved' || real.verdict === 'fixed');
+ok('呼出が増えていることが数字に残る(使わなくなった訳ではない)', 176 > 84);
+
+console.log('== events: 呼び出しと結果の対応付け ==');
+// transcript.js の最小スタブ(この層の分岐だけ検証する)
+const T = {
+  isMainLoop: () => true,
+  isAssistant: (e) => e.type === 'assistant',
+  isUser: (e) => e.type === 'user',
+  toolUsesOf: (e) => e.uses || [],
+  blocksOf: (e) => e.blocks || [],
+};
+{
+  const col = EV.makeCollector();
+  EV.feed(T, col, { type: 'assistant', timestamp: '2026-08-01T00:00:00Z', uses: [{ id: 'u1', name: 'X' }] });
+  EV.feed(T, col, { type: 'user', timestamp: '2026-08-01T00:00:01Z',
+    blocks: [{ type: 'tool_result', tool_use_id: 'u1', is_error: true, content: 'tabId must be an integer' }] });
+  ok('失敗は行を増やさず呼び出し側を書き換える(分母が二重にならない)', col.events.length === 1);
+  ok('失敗として記録される', col.events[0].ok === false);
+  ok('時刻は呼び出し側のもの', col.events[0].ts === Date.parse('2026-08-01T00:00:00Z'));
+}
+{
+  const col = EV.makeCollector();
+  EV.feed(T, col, { type: 'assistant', timestamp: '2026-08-01T00:00:00Z', uses: [{ id: 'u2', name: 'X' }] });
+  ok('結果が返らなかった呼び出しも分母に入る', col.events.length === 1 && col.events[0].ok === true);
+}
+{
+  // 呼び出しが窓の外・結果が窓の内。pending に入っていないと unknown 化する。
+  const cut = Date.parse('2026-08-10T00:00:00Z');
+  const col = EV.makeCollector();
+  EV.feed(T, col, { type: 'assistant', timestamp: '2026-08-01T00:00:00Z', uses: [{ id: 'u3', name: 'X' }] }, { sinceMs: cut });
+  EV.feed(T, col, { type: 'user', timestamp: '2026-08-11T00:00:00Z',
+    blocks: [{ type: 'tool_result', tool_use_id: 'u3', is_error: true, content: 'boom' }] }, { sinceMs: cut });
+  ok('窓外の呼び出しは計上しないが、対応付けは失わない', col.events.length === 0);
+}
+
+
 console.log(`\n結果: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

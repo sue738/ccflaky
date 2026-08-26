@@ -14,6 +14,10 @@
 const T = require('../lib/vendor/transcript.js');
 const S = require('../lib/flaky.js');
 const G = require('../lib/suggest.js');
+const R = require('../lib/relapse.js');
+const EV = require('../lib/events.js');
+const path = require('path');
+const os = require('os');
 const fs = require('fs');
 
 // English by default (this is a public npm package); same override pattern
@@ -40,6 +44,14 @@ Usage: ccflaky [options]
                         failures clustered by type (no LLM, deterministic)
   --min-calls N        --suggest threshold: minimum calls to count (default 5)
   --min-rate N         --suggest threshold: minimum error rate % (default 20)
+  --guardable          with --suggest: mark which failures a pre-call guard
+                       could actually catch (single cause + input-side)
+  --watch TOOL         record that you just guarded TOOL; now becomes the
+                       cutoff between "before" and "after"
+  --verify             for everything watched: failure rate before vs after.
+                       This is the step people skip -- a rule gets written and
+                       everyone assumes it worked.
+  --min-after N        calls needed after a guard before judging (default 20)
   --memory-dir D        --suggest: check each flagged tool's name against
                         *.md files in D, flag whether it's already documented
                         (optional — skipped if not given, keeps this general-
@@ -62,6 +74,10 @@ function parseArgs(argv) {
     else if (a === '--json') o.json = true;
     else if (a === '--base-dir') { if (!looksLikeFlag(argv[i + 1])) o.baseDir = argv[++i]; }
     else if (a === '--suggest') o.suggest = true;
+    else if (a === '--guardable') o.guardable = true;
+    else if (a === '--watch') { if (!looksLikeFlag(argv[i + 1])) o.watch = argv[++i]; }
+    else if (a === '--verify') o.verify = true;
+    else if (a === '--min-after') { if (!looksLikeFlag(argv[i + 1])) o.minAfter = +argv[++i]; }
     else if (a === '--min-calls') { if (!looksLikeFlag(argv[i + 1])) o.minCalls = +argv[++i]; }
     else if (a === '--min-rate') { if (!looksLikeFlag(argv[i + 1])) o.minRate = +argv[++i]; }
     else if (a === '--memory-dir') { if (!looksLikeFlag(argv[i + 1])) o.memoryDir = argv[++i]; }
@@ -83,8 +99,66 @@ const bar = S.bar;
 function feed(tr, entry, sinceMs) { return S.feed(T, tr, entry, { scope: SCOPE, sinceMs }); }
 function summarize(tr) { return S.summarize(tr, SCOPE); }
 
+
+// --- guard の投入記録と、その後の再発測定 -------------------------------
+// 「規則を書いた」で終わらせないための最小の仕掛け。投入時刻を1つ持てば、
+// 履歴側は既にあるので前後比較ができる(事前に基準を取っておく必要がない)。
+const MANIFEST = process.env.CCFLAKY_MANIFEST
+  || path.join(os.homedir(), '.claude', 'ccflaky-guards.json');
+
+function loadGuards() {
+  try { return JSON.parse(fs.readFileSync(MANIFEST, 'utf8')).guards || []; }
+  catch (e) { return []; }
+}
+function saveGuards(guards) {
+  fs.mkdirSync(path.dirname(MANIFEST), { recursive: true });
+  fs.writeFileSync(MANIFEST, JSON.stringify({ guards }, null, 2) + '\n');
+}
+
+async function collectEvents(o) {
+  const sinceMs = o.days ? Date.now() - o.days * 86400000 : undefined;
+  return EV.collect(T, { baseDir: o.baseDir, project: o.project, sinceMs });
+}
+
 async function main() {
   const o = parseArgs(process.argv);
+
+  if (o.watch) {
+    const guards = loadGuards().filter((g) => g.tool !== o.watch);
+    const at = new Date().toISOString();
+    guards.push({ tool: o.watch, installedAt: at });
+    saveGuards(guards);
+    console.log(L(`watching ${o.watch} from ${at}`, `${o.watch} を ${at} から監視します`));
+    console.log(L('  Calls before that moment are the baseline; calls after are the test.',
+                  '  この時刻より前が基準、後が検証対象です。'));
+    return;
+  }
+
+  if (o.verify) {
+    const guards = loadGuards();
+    if (!guards.length) {
+      return console.log(L('(nothing watched yet — add a guard, then: ccflaky --watch <tool>)',
+                           '(監視対象なし — ガードを入れたら ccflaky --watch <tool>)'));
+    }
+    const events = await collectEvents(o);
+    const results = guards.map((g) => {
+      const rates = R.ratesAround(events, { tool: g.tool, cutoffMs: Date.parse(g.installedAt) });
+      return { ...g, ...rates, ...R.verdict(rates, { minAfterCalls: o.minAfter }) };
+    });
+    if (o.json) return console.log(JSON.stringify({ results }, null, 2));
+    const ICON = { fixed: '✔', improved: '↓', unchanged: '=', worse: '✗', insufficient: '?', 'no-baseline': '?' };
+    console.log('=== ccflaky --verify ===');
+    for (const r of results) {
+      console.log(`\n  ${ICON[r.verdict] || '?'} ${r.tool}  ${L('since', '開始')} ${r.installedAt.slice(0, 16)}`);
+      const fmtSide = (b) => `${b.calls} calls, ${b.errors} err` + (b.rate == null ? '' : ` (${b.rate.toFixed(1)}%)`);
+      console.log(`      ${L('before', '投入前')}: ${fmtSide(r.before)}`);
+      console.log(`      ${L('after', '投入後')}:  ${fmtSide(r.after)}`);
+      console.log(`      ${r.verdict}: ${r.note}`);
+    }
+    console.log(L('\n  A drop with fewer calls is not a fix — read the call counts, not just the rate.',
+                  '\n  呼出が減っての低下は改善ではない。率だけでなく呼出数も見ること。'));
+    return;
+  }
   const sinceMs = o.days ? Date.now() - o.days * 86400000 : undefined;
   const files = T.locate({
     baseDir: o.baseDir, project: o.project,
@@ -164,16 +238,24 @@ async function main() {
           } catch (e) { return false; }
         });
       }
-      return { ...f, documented };
+      // 「呼ぶ前に止められる型か」の判定。閾値を超えた全部にガードを書くのは
+      // 割に合わない — 原因が単一に収束していて、かつ入力側の問題のものだけ。
+      const guard = o.guardable ? R.guardCandidate(f) : null;
+      return { ...f, documented, ...(guard ? { guardable: guard.candidate, guardReason: guard.reason } : {}) };
     });
     if (o.json) return console.log(JSON.stringify({ minCalls: o.minCalls || 5, minRate: o.minRate || 20, tools: withDocFlag }, null, 2));
     if (!withDocFlag.length) return console.log(L('(no tools crossed the threshold)', '(閾値を超えたツールなし)'));
     console.log(`=== ccflaky --suggest ${o.days ? `(last ${o.days}d)` : ''} ===`);
     for (const f of withDocFlag) {
       const docNote = f.documented === null ? '' : f.documented ? L('  [already documented]', '  [記録済み]') : L('  [NOT documented]', '  [未記録]');
-      console.log(`\n  ${f.name}  ${f.calls} calls, ${f.errors} errors (${f.errorRate}%)${docNote}`);
+      const mark = o.guardable ? (f.guardable ? '✔ ' : '· ') : '';
+      console.log(`\n  ${mark}${f.name}  ${f.calls} calls, ${f.errors} errors (${f.errorRate}%)${docNote}`);
       for (const c of f.clusters) {
         console.log(`    ${String(c.count).padStart(3)}x  ${c.sample.slice(0, 100)}`);
+      }
+      if (o.guardable) {
+        console.log(`      → ${f.guardReason}`);
+        if (f.guardable) console.log(`      → ${L('write the guard, then:', 'ガードを書いたら:')} ccflaky --watch ${f.name}`);
       }
     }
     return;
