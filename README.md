@@ -6,6 +6,10 @@ A failing tool is invisible in normal use: Claude retries, works around it, and
 you never learn that your test command errors 40% of the time. ccflaky pairs
 every `tool_use` with its result and counts what happened.
 
+Not a usage dashboard. `ccusage` already answers "what did I spend"; this
+answers "what quietly didn't work" — which tool, how often, and with what
+error text.
+
 ```
 $ ccflaky
 === ccflaky — 352 calls, 5.7% error ===
@@ -54,13 +58,12 @@ re-diagnose the same failure twice.
 
 ## Install
 
-Not yet published to npm — build from this checkout:
-
 ```sh
-git clone https://github.com/sue738/ccflaky.git
-cd ccflaky
-npm link   # or: npm install -g .
+npm install -g ccflaky
 ```
+
+Or run it once without installing: `npx ccflaky`. To build from source:
+`git clone https://github.com/sue738/ccflaky.git && cd ccflaky && npm link`.
 
 Output is English by default; set `CCFLAKY_LANG=ja` (or `LANG=ja_JP.UTF-8`) for Japanese.
 
