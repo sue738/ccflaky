@@ -69,25 +69,35 @@ Usage: ccflaky [options]
 // (found on review: NaN days = no filter, and --json never took effect).
 function looksLikeFlag(s) { return typeof s === 'string' && s.startsWith('--'); }
 
+function usageError(msg) { console.error(msg); process.exit(2); }
+
 function parseArgs(argv) {
   const o = {};
+  // A flag that takes a value and finds none (end of argv, or another flag)
+  // used to be skipped silently: `--days --json` meant all history, and a bare
+  // `--watch` printed the summary without registering anything.
+  const value = (i, flag) => {
+    const v = argv[i + 1];
+    if (v === undefined || looksLikeFlag(v)) usageError(L(`${flag}: expected a value`, `${flag}: 値を指定してください`));
+    return v;
+  };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--days') { if (!looksLikeFlag(argv[i + 1])) o.days = +argv[++i]; }
+    if (a === '--days') o.days = +value(i++, a);
     else if (a === '--daily') o.daily = true;
-    else if (a === '--project') { if (!looksLikeFlag(argv[i + 1])) o.project = argv[++i]; }
+    else if (a === '--project') o.project = value(i++, a);
     else if (a === '--failures') o.failures = true;
     else if (a === '--json') o.json = true;
-    else if (a === '--base-dir') { if (!looksLikeFlag(argv[i + 1])) o.baseDir = argv[++i]; }
+    else if (a === '--base-dir') o.baseDir = value(i++, a);
     else if (a === '--suggest') o.suggest = true;
     else if (a === '--guardable') o.guardable = true;
-    else if (a === '--watch') { if (!looksLikeFlag(argv[i + 1])) o.watch = argv[++i]; }
+    else if (a === '--watch') o.watch = value(i++, a);
     else if (a === '--verify') o.verify = true;
-    else if (a === '--scaffold') { if (!looksLikeFlag(argv[i + 1])) o.scaffold = argv[++i]; }
-    else if (a === '--min-after') { if (!looksLikeFlag(argv[i + 1])) o.minAfter = +argv[++i]; }
-    else if (a === '--min-calls') { if (!looksLikeFlag(argv[i + 1])) o.minCalls = +argv[++i]; }
-    else if (a === '--min-rate') { if (!looksLikeFlag(argv[i + 1])) o.minRate = +argv[++i]; }
-    else if (a === '--memory-dir') { if (!looksLikeFlag(argv[i + 1])) o.memoryDir = argv[++i]; }
+    else if (a === '--scaffold') o.scaffold = value(i++, a);
+    else if (a === '--min-after') o.minAfter = +value(i++, a);
+    else if (a === '--min-calls') o.minCalls = +value(i++, a);
+    else if (a === '--min-rate') o.minRate = +value(i++, a);
+    else if (a === '--memory-dir') o.memoryDir = value(i++, a);
     else if (a === '-h' || a === '--help') { console.log(HELP); process.exit(0); }
     else if (a.startsWith('-')) {
       // 知らないフラグを黙って捨てると、typo(--dyas 1)が「全期間の集計」として
@@ -98,6 +108,14 @@ function parseArgs(argv) {
       process.exit(2);
     }
   }
+  // A malformed number must not read as "nothing" or as the default: --days -3
+  // printed no calls, --days abc meant all history, --min-calls abc silently
+  // became 5, and --min-after -1 judged a guard on three calls.
+  if (o.days != null && !(Number.isFinite(o.days) && o.days > 0)) usageError(L('--days: expected a positive number', '--days: 正の数で指定してください'));
+  for (const [k, flag] of [['minCalls', '--min-calls'], ['minAfter', '--min-after']]) {
+    if (o[k] != null && !(Number.isInteger(o[k]) && o[k] > 0)) usageError(L(`${flag}: expected a positive whole number`, `${flag}: 正の整数で指定してください`));
+  }
+  if (o.minRate != null && !(Number.isFinite(o.minRate) && o.minRate > 0 && o.minRate <= 100)) usageError(L('--min-rate: expected a percentage above 0, up to 100', '--min-rate: 0より大きく100以下の%で指定してください'));
   return o;
 }
 

@@ -366,5 +366,28 @@ console.log('== --verify --json は監視対象なしでも JSON ==');
   fs.rmSync(base, { recursive: true, force: true });
 }
 
+console.log('== 値の誤りは拒否(0件や全期間に化けない) ==');
+{
+  const { spawnSync } = require('child_process');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ccflaky-args-'));
+  fs.mkdirSync(path.join(base, '-tmp-proj'));
+  fs.writeFileSync(path.join(base, '-tmp-proj', 'sess.jsonl'),
+    JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { content: [{ type: 'tool_use', name: 'Bash', id: 'a1' }] } }) + '\n');
+  const manifest = path.join(base, 'guards.json');
+  const st = (args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'ccflaky.js'), '--base-dir', base, ...args],
+    { encoding: 'utf8', env: Object.assign({}, process.env, { CCFLAKY_LANG: 'en', CCFLAKY_MANIFEST: manifest }) });
+  ok('★--days --json(値なし)は exit 2(全期間に化けない)', st(['--days', '--json']).status === 2);
+  ok('★--days -3 は exit 2', st(['--days', '-3']).status === 2);
+  ok('★--days abc は exit 2', st(['--days', 'abc']).status === 2);
+  ok('★--min-calls abc は exit 2(黙って5にしない)', st(['--suggest', '--min-calls', 'abc']).status === 2);
+  ok('★--min-rate 0 / 150 は exit 2', st(['--suggest', '--min-rate', '0']).status === 2 && st(['--suggest', '--min-rate', '150']).status === 2);
+  ok('★--min-after -1 は exit 2(薄い標本で判定しない)', st(['--verify', '--min-after', '-1']).status === 2);
+  const bare = st(['--watch']);
+  ok('★値なしの --watch は exit 2 で何も登録しない', bare.status === 2 && !fs.existsSync(manifest));
+  ok('正しい値は通る', st(['--days', '7', '--suggest', '--min-calls', '3', '--min-rate', '10']).status === 0);
+  fs.rmSync(base, { recursive: true, force: true });
+}
+
 console.log(`\n結果: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);
