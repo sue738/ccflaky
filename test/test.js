@@ -353,5 +353,18 @@ console.log('== 日付はローカル日(UTC ではない) ==');
   fs.rmSync(base, { recursive: true, force: true });
 }
 
+console.log('== --verify --json は監視対象なしでも JSON ==');
+{
+  const { execFileSync } = require('child_process');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ccflaky-empty-'));
+  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'ccflaky.js'), '--base-dir', base, '--verify', '--json'],
+    { encoding: 'utf8', env: Object.assign({}, process.env, { CCFLAKY_MANIFEST: path.join(base, 'none.json') }) });
+  let parsed = null;
+  try { parsed = JSON.parse(out); } catch (e) { /* sentence */ }
+  ok('★監視対象なしの --verify --json は {results: []}', parsed && Array.isArray(parsed.results) && parsed.results.length === 0);
+  fs.rmSync(base, { recursive: true, force: true });
+}
+
 console.log(`\n結果: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

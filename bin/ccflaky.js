@@ -182,6 +182,8 @@ async function main() {
 
   if (o.verify) {
     const guards = loadGuards();
+    // --json always answers in JSON: the empty result, not a sentence.
+    if (!guards.length && o.json) return console.log(JSON.stringify({ results: [] }, null, 2));
     if (!guards.length) {
       return console.log(L('(nothing watched yet — add a guard, then: ccflaky --watch <tool>)',
                            '(監視対象なし — ガードを入れたら ccflaky --watch <tool>)'));
