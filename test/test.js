@@ -76,7 +76,8 @@ console.log('== --daily: 日をまたぐtool_result ==');
   const out = execFileSync(
     process.execPath,
     [path.join(__dirname, '..', 'bin', 'ccflaky.js'), '--base-dir', base, '--daily', '--json'],
-    { encoding: 'utf8' },
+    // days are local; pin UTC so 23:59Z and 00:01Z fall on two days in any zone
+    { encoding: 'utf8', env: Object.assign({}, process.env, { TZ: 'UTC' }) },
   );
   const daily = JSON.parse(out).daily;
   const day19 = daily.find((d) => d.date === '2026-08-19');
@@ -329,6 +330,27 @@ ok('手がかりが無くても落ちない', Array.isArray(SC.hintFields('boom'
   ok('拾ったフィールド名を手がかりとして出す', out.includes('tabId'));
   ok('投入後に測る手順を書き込む', out.includes('--watch T') && out.includes('--verify'));
   ok('deny を返す形になっている', out.includes('"permissionDecision": "deny"'));
+}
+
+console.log('== 日付はローカル日(UTC ではない) ==');
+{
+  const { execFileSync } = require('child_process');
+  const fs = require('fs'), os = require('os'), path = require('path');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'ccflaky-tz-'));
+  fs.mkdirSync(path.join(base, '-tmp-proj'));
+  // 東京の 2026-09-20 08:00 は UTC では 19日 23:00
+  fs.writeFileSync(path.join(base, '-tmp-proj', 'sess.jsonl'), [
+    JSON.stringify({ type: 'assistant', timestamp: '2026-09-19T23:00:00.000Z', message: { content: [{ type: 'tool_use', name: 'Bash', id: 't1' }] } }),
+    JSON.stringify({ type: 'user', timestamp: '2026-09-19T23:00:05.000Z', message: { content: [{ type: 'tool_result', tool_use_id: 't1', is_error: true, content: 'boom' }] } }),
+  ].join('\n') + '\n');
+  const manifest = path.join(base, 'guards.json');
+  fs.writeFileSync(manifest, JSON.stringify({ guards: [{ tool: 'Bash', installedAt: '2026-09-19T23:30:00.000Z' }] }));
+  const env = Object.assign({}, process.env, { TZ: 'Asia/Tokyo', CCFLAKY_LANG: 'en', CCFLAKY_MANIFEST: manifest });
+  const run = (args) => execFileSync(process.execPath, [path.join(__dirname, '..', 'bin', 'ccflaky.js'), '--base-dir', base, ...args], { encoding: 'utf8', env });
+  const daily = JSON.parse(run(['--daily', '--json'])).daily;
+  ok('★--daily は JST の当日(09-20)に計上', daily.length === 1 && daily[0].date === '2026-09-20');
+  ok('★--verify の開始時刻はローカル時刻', run(['--verify']).includes('since 2026-09-20 08:30'));
+  fs.rmSync(base, { recursive: true, force: true });
 }
 
 console.log(`\n結果: ${pass} pass / ${fail} fail`);

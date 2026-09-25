@@ -101,6 +101,22 @@ function parseArgs(argv) {
   return o;
 }
 
+const pad2 = (n) => String(n).padStart(2, '0');
+/**
+ * Local calendar day 'YYYY-MM-DD'. Transcript timestamps are UTC; slicing the
+ * ISO string named the UTC day, so east of UTC anything before the offset hour
+ * (09:00 in Tokyo) was counted under the day before.
+ */
+function dayKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+/** Local 'YYYY-MM-DD HH:MM' — a guard's start is shown in the reader's own clock. */
+function minuteKey(ms) {
+  const d = new Date(ms);
+  return `${dayKey(ms)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 const makeTracker = S.makeTracker;
 const bar = S.bar;
 function feed(tr, entry, sinceMs) { return S.feed(T, tr, entry, { scope: SCOPE, sinceMs }); }
@@ -135,7 +151,7 @@ async function main() {
     const at = new Date().toISOString();
     guards.push({ tool: o.watch, installedAt: at });
     saveGuards(guards);
-    console.log(L(`watching ${o.watch} from ${at}`, `${o.watch} を ${at} から監視します`));
+    console.log(L(`watching ${o.watch} from ${minuteKey(Date.parse(at))}`, `${o.watch} を ${minuteKey(Date.parse(at))} から監視します`));
     console.log(L('  Calls before that moment are the baseline; calls after are the test.',
                   '  この時刻より前が基準、後が検証対象です。'));
     return;
@@ -179,7 +195,8 @@ async function main() {
     const ICON = { fixed: '✔', improved: '↓', unchanged: '=', worse: '✗', insufficient: '?', 'no-baseline': '?' };
     console.log('=== ccflaky --verify ===');
     for (const r of results) {
-      console.log(`\n  ${ICON[r.verdict] || '?'} ${r.tool}  ${L('since', '開始')} ${r.installedAt.slice(0, 16)}`);
+      const since = Date.parse(r.installedAt);
+      console.log(`\n  ${ICON[r.verdict] || '?'} ${r.tool}  ${L('since', '開始')} ${Number.isNaN(since) ? r.installedAt : minuteKey(since)}`);
       const fmtSide = (b) => `${b.calls} calls, ${b.errors} err` + (b.rate == null ? '' : ` (${b.rate.toFixed(1)}%)`);
       console.log(`      ${L('before', '投入前')}: ${fmtSide(r.before)}`);
       console.log(`      ${L('after', '投入後')}:  ${fmtSide(r.after)}`);
@@ -212,7 +229,7 @@ async function main() {
         // --days 30 のはずが45日分出た)。entry自身のtimestampでも下限を切る。
         const t = Date.parse(e.timestamp);
         if (sinceMs !== undefined && (Number.isNaN(t) || t < sinceMs)) continue;
-        const day = e.timestamp.slice(0, 10);
+        const day = Number.isNaN(t) ? e.timestamp.slice(0, 10) : dayKey(t);
         if (!byDay.has(day)) byDay.set(day, makeTracker(sharedPending));
         feed(byDay.get(day), e, sinceMs);
       }
