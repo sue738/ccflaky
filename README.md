@@ -25,6 +25,8 @@ $ ccflaky
 That last line is the point: a tool failing half the time, discovered only because
 something counted it.
 
+> Also for Codex CLI, Gemini CLI and Cursor: [agstats](https://github.com/sue738/agstats) reads every agent's transcripts side by side (`npx agstats tools --suggest`, `npx agstats guards`).
+
 ```bash
 ccflaky                    # all time
 ccflaky --days 7           # recent
